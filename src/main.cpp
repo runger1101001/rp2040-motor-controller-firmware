@@ -4,6 +4,7 @@
 #include "./hw_setup.h"
 #include "./led_signals.h"
 #include "./motor_utils.h"
+#include "gpio.h"
 
 #include "encoders/mt6701/MagneticSensorMT6701SSI.h"
 
@@ -23,7 +24,7 @@
 
 #define DEFAULT_VOLTAGE_POWER_SUPPLY 15.0f
 #define DEFAULT_VOLTAGE_LIMIT 3.0f
-#define ALIGNMENT_VOLTAGE_LIMIT 0.5f
+#define ALIGNMENT_VOLTAGE_LIMIT 3.0f
 
 #define MOTOR_PP 7
 #define MOTOR_KV NOT_SET
@@ -38,6 +39,7 @@
 // void handleA0() { sensor0.handleA(); };
 // void handleB0() { sensor0.handleB(); };
 // void handleZ0() { sensor0.handleIndex(); };
+//arduino::MbedSPI sensorSPI(digitalPinToPinName(3), SPI_MOSI, SPI_SCK);
 MagneticSensorMT6701SSI sensor0 = MagneticSensorMT6701SSI(SENSOR0_CS_PIN);
 BLDCDriver6PWM driver0 = BLDCDriver6PWM(M0_INUH_PIN, M0_INUL_PIN, M0_INVH_PIN, M0_INVL_PIN, M0_INWH_PIN, M0_INWL_PIN);
 //LowsideCurrentSense current0 = LowsideCurrentSense(1.0f, 1.0f/CURRENT_VpA, M0_AOUTU_PIN, M0_AOUTV_PIN, M0_AOUTW_PIN);
@@ -68,7 +70,7 @@ unsigned long ts = 0;
 
 void setup() {
   // setup LEDs
-  leds.init(100);
+  leds.init(50);
   // initialize serial port on USB, debug output goes to this
   Serial.begin(SERIAL_SPEED);
   SimpleFOCDebug::enable();
@@ -91,7 +93,9 @@ void setup() {
     SimpleFOCDebug::println("Driver 1 init failed!"); 
   motor1.linkDriver(&driver1);
 
+
   sensor0.init();
+  gpio_set_function(LED_WS2812_PIN, GPIO_FUNC_PIO0); //setting this makes NeoPixel work but SPI fail :-(
   //sensor0.enableInterrupts(handleA0, handleB0, handleZ0);
   sensor1.pullup = Pullup::USE_INTERN;
   sensor1.init();
@@ -149,6 +153,7 @@ void setup() {
     //   motor1.linkCurrentSense(&current1);
     if (motor1.motor_status==FOCMotorStatus::motor_uncalibrated) {
         //motor1.linkSensor(&sensor1);
+        //motor1.linkSensor(&sensor0);
         SimpleFOCDebug::println("Initializing FOC motor 1...");
         if (motor1.initFOC())
           SimpleFOCDebug::println("Motor 1 ready for closed loop.");
@@ -167,7 +172,7 @@ void setup() {
 
   SimpleFOCDebug::println("Startup complete.");
   ts = millis();  
-
+  leds.signalInitState(3);
 }
 
 
@@ -199,10 +204,14 @@ void loop() {
     ts = millis();
     SimpleFOCDebug::print("loop/s: ");
     SimpleFOCDebug::print(count);
-    SimpleFOCDebug::print(" ang1: ");
-    SimpleFOCDebug::println(sensor1.getAngle());
+    SimpleFOCDebug::print(" a1: ");
+    SimpleFOCDebug::print(sensor0.getAngle());
+    SimpleFOCDebug::print(" v1: ");
+    SimpleFOCDebug::println(sensor0.getVelocity());    
     count = 0;
   }
+
+  leds.signalInitState(1);
 
   commander.run();
 }
