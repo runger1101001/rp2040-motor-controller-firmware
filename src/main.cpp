@@ -42,7 +42,8 @@
 //arduino::MbedSPI sensorSPI(digitalPinToPinName(3), SPI_MOSI, SPI_SCK);
 MagneticSensorMT6701SSI sensor0 = MagneticSensorMT6701SSI(SENSOR0_CS_PIN);
 BLDCDriver6PWM driver0 = BLDCDriver6PWM(M0_INUH_PIN, M0_INUL_PIN, M0_INVH_PIN, M0_INVL_PIN, M0_INWH_PIN, M0_INWL_PIN);
-//LowsideCurrentSense current0 = LowsideCurrentSense(1.0f, 1.0f/CURRENT_VpA, M0_AOUTU_PIN, M0_AOUTV_PIN, M0_AOUTW_PIN);
+//LowsideCurrentSense current0 = LowsideCurrentSense(1.0f, 1.0f/CURRENT_VpA, M0_AOUTU_PIN, M0_AOUTV_PIN, NOT_SET);
+InlineCurrentSense current0 = InlineCurrentSense(1.0f, 1.0f/CURRENT_VpA, M0_AOUTU_PIN, M0_AOUTV_PIN, NOT_SET);
 BLDCMotor motor0 = BLDCMotor(MOTOR_PP, MOTOR_PHASE_RESISTANCE, MOTOR_KV);
 
 // motor 1
@@ -51,7 +52,8 @@ void handleA1() { sensor1.handleA(); };
 void handleB1() { sensor1.handleB(); };
 void handleZ1() { sensor1.handleIndex(); };
 BLDCDriver6PWM driver1 = BLDCDriver6PWM(M1_INUH_PIN, M1_INUL_PIN, M1_INVH_PIN, M1_INVL_PIN, M1_INWH_PIN, M1_INWL_PIN);
-//LowsideCurrentSense current1 = LowsideCurrentSense(1.0f, 1.0f/CURRENT_VpA, M1_AOUTU_PIN, M1_AOUTV_PIN, M1_AOUTW_PIN);
+//LowsideCurrentSense current1 = LowsideCurrentSense(1.0f, 1.0f/CURRENT_VpA, NOT_SET, M1_AOUTV_PIN, M1_AOUTW_PIN);
+InlineCurrentSense current1 = InlineCurrentSense(1.0f, 1.0f/CURRENT_VpA, NOT_SET, M1_AOUTV_PIN, M1_AOUTW_PIN);
 BLDCMotor motor1 = BLDCMotor(MOTOR_PP, MOTOR_PHASE_RESISTANCE, MOTOR_KV);
 
 // Commander
@@ -116,6 +118,20 @@ void setup() {
   motor0.controller = motor1.controller = MotionControlType::velocity;
   motor0.torque_controller = motor1.torque_controller = TorqueControlType::voltage;
 
+  current0.skip_align = true;
+  motor0.PID_current_q.P = 5;
+  motor0.PID_current_q.I = 1000;
+  motor0.PID_current_q.D = 0;
+  motor0.PID_current_q.limit = motor0.voltage_limit; 
+  motor0.PID_current_q.output_ramp = 1e6;
+  motor0.LPF_current_q.Tf= 0.005;
+  motor0.PID_current_d.P = 5;
+  motor0.PID_current_d.I = 1000;
+  motor0.PID_current_d.D = 0;
+  motor0.PID_current_d.limit = motor0.voltage_limit; 
+  motor0.PID_current_d.output_ramp = 1e6;
+  motor0.LPF_current_d.Tf= 0.005;
+
   motor0.motion_downsample = motor1.motion_downsample = 4;
   motor1.motion_cnt = 2; // stagger the calls to move()
 
@@ -123,11 +139,16 @@ void setup() {
 
   if (driver0.initialized) {
     motor0.init();
-    //SimpleFOCDebug::println("Initializing current sense 0...");
-    // if (current0.init()!=1)
-    //   SimpleFOCDebug::println("Current sense 0 init failed!");
-    // else
-    //   motor0.linkCurrentSense(&current0);
+    SimpleFOCDebug::println("Initializing current sense 0...");
+    current0.linkDriver(&driver0);
+    if (current0.init()!=1)
+      SimpleFOCDebug::println("Current sense 0 init failed!");
+    else {
+      // SimpleFOCDebug::println("Found offset A ", current0.offset_ia);
+      // SimpleFOCDebug::println("Found offset B ", current0.offset_ib);
+      // SimpleFOCDebug::println("Found offset C ", current0.offset_ic);
+      motor0.linkCurrentSense(&current0);
+    }
     leds.signalInitState(2);
     if (motor0.motor_status==FOCMotorStatus::motor_uncalibrated) {
       motor0.linkSensor(&sensor0);
@@ -146,6 +167,7 @@ void setup() {
 
   if (driver1.initialized) {
     motor1.init();
+    // current1.linkDriver(&driver1);
     // SimpleFOCDebug::println("Initializing current sense 1...");
     // if (current1.init()!=1)
     //   SimpleFOCDebug::println("Current sense 1 init failed!");
@@ -175,9 +197,10 @@ void setup() {
   leds.signalInitState(3);
 }
 
+extern volatile int rp2040_intcount;
+int last_intcount = 0;
 
-
-void loop() {
+void loop() { 
 
   if (motor0.motor_status==FOCMotorStatus::motor_uncalibrated 
       || motor0.motor_status==FOCMotorStatus::motor_calib_failed 
@@ -202,12 +225,24 @@ void loop() {
   count++;
   if (ts + 1000uL < millis()) {
     ts = millis();
-    SimpleFOCDebug::print("loop/s: ");
-    SimpleFOCDebug::print(count);
-    SimpleFOCDebug::print(" a1: ");
-    SimpleFOCDebug::print(sensor0.getAngle());
-    SimpleFOCDebug::print(" v1: ");
-    SimpleFOCDebug::println(sensor0.getVelocity());    
+    // SimpleFOCDebug::print("loop/s: ");
+    // SimpleFOCDebug::print(count);
+    // SimpleFOCDebug::print(" a0: ");
+    // SimpleFOCDebug::print(sensor0.getAngle());
+    // SimpleFOCDebug::print(" v0: ");
+    // SimpleFOCDebug::print(sensor0.getVelocity());
+    // SimpleFOCDebug::print(" c0a: ");
+    // SimpleFOCDebug::print(current0.getPhaseCurrents().a);
+    // SimpleFOCDebug::print(" c0b: ");
+    // SimpleFOCDebug::print(current0.getPhaseCurrents().b);
+    // SimpleFOCDebug::print(" cnt: ");
+    // SimpleFOCDebug::println(rp2040_intcount-last_intcount);
+    Serial.print(current0.getPhaseCurrents().a, 4);
+    Serial.print(" ");
+    Serial.print(current0.getPhaseCurrents().b, 4);
+    Serial.print(" ");
+    Serial.println(current0.getPhaseCurrents().c, 4);
+    last_intcount=rp2040_intcount;
     count = 0;
   }
 

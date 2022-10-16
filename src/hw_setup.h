@@ -17,6 +17,7 @@
 #define M0_AOUTV_PIN        28
 #define M1_AOUTV_PIN        26
 #define M1_AOUTW_PIN        27
+#define CURRENT_VpA         0.1f
 
 #define ENCODER0_A_PIN       16
 #define ENCODER0_B_PIN       17
